@@ -1,5 +1,4 @@
 #include "headers.h"
-#define QUEUE_KEY 1234
 void clearResources(int);
 int msgqid;
 int main(int argc, char * argv[])

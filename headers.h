@@ -16,6 +16,7 @@ typedef short bool;
 #define false 0
 
 #define SHKEY 300
+#define QUEUE_KEY 1234
 
 
 ///==============================
