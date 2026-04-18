@@ -1,6 +1,6 @@
 #include "headers.h"
 void clearResources(int);
-int msgqid;
+int msgqid=-1; // not initialized
 int main(int argc, char * argv[])
 {
     signal(SIGINT, clearResources);
@@ -31,17 +31,50 @@ int main(int argc, char * argv[])
     fclose(file);
     // 2. Ask the user for the chosen scheduling algorithm and its parameters, if there are any.
     int algo, quantum = 0;
-    printf("Choose Scheduling Algorithm:\n1. HPF\n2. RR\n3. FCFS\nSelection: ");
-    scanf("%d", &algo);
-    if (algo == 2) {
-        printf("Enter Time Quantum: ");
-        scanf("%d", &quantum);
+    while (1) 
+{
+    printf("Select algorithm [1:HPF,2:RR,3:FCFS]: ");
+
+    if (scanf("%d", &algo) != 1) 
+    {
+        printf("Invalid.Enter a number\n");
+        while (getchar() != '\n');
+        continue;
     }
+
+    if (algo >= 1 && algo <= 3)
+        break;
+
+    printf("Invalid.Enter 1/2/3\n");
+}
+if (algo == 2) 
+{
+    while (1) 
+    {
+        printf("Enter quantum: ");
+
+        if (scanf("%d", &quantum) != 1) 
+        {
+            printf("Invalid.Enter a number\n");
+            while (getchar() != '\n');
+            continue;
+        }
+
+        if (quantum > 0)
+            break;
+
+        printf("Quantum must be >0\n");
+    }
+}
+
     // 3. Initiate and create the scheduler and clock processes.
     // Start Clock
     int clk_pid = fork();
-    if (clk_pid == 0) {
+    if (clk_pid == 0) 
+    {
         execl("./clk.out", "clk.out", NULL);
+        perror("Error starting clk.out");
+        exit(-1);
     }
 
     // Start Scheduler
@@ -53,6 +86,8 @@ int main(int argc, char * argv[])
         sprintf(count_str, "%d", count);
         // Passing algorithm, quantum, and total process count as arguments
         execl("./scheduler.out", "scheduler.out", algo_str, param_str, count_str, NULL);
+        perror("Error starting scheduler.out");
+        exit(-1);
     }
     // 4. Use this function after creating the clock process to initialize clock
     initClk();
@@ -67,20 +102,29 @@ int main(int argc, char * argv[])
         exit(-1);
     }
     int i = 0;
+    int prvTime = -1;
     while (i < count) {
-        int currentTime = getClk(); //
+        int currentTime = getClk(); 
+        if (currentTime == prvTime) // wait before checking again!!
+        {
+            usleep(500000); // sleep 0.5 sec!
+            continue;
+        }
+
+        prvTime = currentTime;
 
         // Check if any processes have "arrived" based on current clock time
-        while (i < count && processes[i].arrival <= currentTime) {
+        while (i < count && processes[i].arrival <= currentTime) 
+        {
             // Send process to scheduler via message queue
-            if (msgsnd(msgqid, &processes[i], sizeof(processes[i]) - sizeof(long), !IPC_NOWAIT) == -1) {
+            if (msgsnd(msgqid, &processes[i], sizeof(processes[i]) - sizeof(long), IPC_NOWAIT) == -1) 
+            {
                 perror("Error sending message");
+                break;
             }
             printf("Generator: Sent process %d at time %d\n", processes[i].id, currentTime);
-            i++;
+            i++; 
         }
-        // Small pause to prevent busy wait
-        usleep(1000); 
     }
 
     // Wait for the scheduler to finish its work before exiting
@@ -94,8 +138,9 @@ int main(int argc, char * argv[])
 
 void clearResources(int signum)
 {
+    if (msgqid != -1)
     msgctl(msgqid, IPC_RMID, (struct msqid_ds *)NULL);
     printf("\nResources cleared\n");
-    destroyClk(true); //
+    destroyClk(true); 
     exit(0);
 }
