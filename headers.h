@@ -146,3 +146,101 @@ bool removeProcessCircular(CircularQueue* q, int id) {
 bool isCircularQueueEmpty(CircularQueue* q) {
     return q->size == 0;
 }
+
+// typedef enum {
+//     READY = 0,
+//     RUNNING = 1,
+//     STOPPED = 2
+// } ProcessState;
+
+// typedef struct {
+//     int id;
+//     int arrivalTime;
+//     int runningTime;
+//     int remainingTime;
+//     int priority;
+//     int waitingTime;
+//     int startTime;
+//     int stopTime;
+//     int state;
+//     pid_t pid;
+// } PCB;
+
+// typedef struct {
+//     PCB processes[MAX_PROCESSES];
+//     int size;
+// } PriQueue;
+
+// void initializeQueue(PriQueue * pq, int capacity) {
+//      pq->size = 0;
+// }
+
+// void insert(PriQueue * pq, PCB process) {
+//     pq->processes[pq->size] = process;
+//     pq->size++;
+//     int i = pq->size - 1;
+//     while (i > 0) {
+//         int parent = (i-1)/2;
+//         if (pq->processes[parent].priority > pq->processes[i].priority){
+//             PCB temp = pq->processes[parent];
+//             pq->processes[parent] = pq->processes[i];
+//             pq->processes[i] = temp;
+//             i = parent;
+//         }
+//         else {
+//             break;
+//         }
+
+//     }
+// }
+
+// PCB removetop(PriQueue * pq) {
+//     if (pq->size == 0) {
+//         PCB empty = {0};
+//         return empty;
+//     }
+//     PCB top = pq->processes[0];
+//     pq->processes[0] = pq->processes[pq->size - 1];
+//     pq->size--;
+//     int i = 0;
+//     while (1) {
+//         int left = 2*i + 1;
+//         int right = 2*i + 2;
+//         int smallest;
+//         if (left < pq->size && right < pq->size){
+//             if (pq->processes[left].priority < pq->processes[right].priority){
+//                 smallest = left;
+//             }
+//             else {
+//                 smallest = right;
+//             }
+//         }
+//         else if (left < pq->size) {
+//             smallest = left;
+//         }
+//         else if (right < pq->size) {
+//             smallest = right;
+//         }
+//         if (pq->processes[i].priority > pq->processes[smallest].priority){
+//             PCB temp = pq->processes[i];
+//             pq->processes[i] = pq->processes[smallest];
+//             pq->processes[smallest] = temp;
+//             i = smallest;
+//         }
+//         else {
+//             break;
+//         }
+//     }
+//     return top;
+// }
+
+// PCB peek(PriQueue* pq){
+//     if (pq->size == 0) {
+//         PCB empty = {0};
+//         return empty;
+//     }
+//     return pq->processes[0];
+// }
+//  int isEmpty(PriQueue* pq){
+//     return pq->size == 0;
+// }

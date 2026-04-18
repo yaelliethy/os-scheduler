@@ -26,3 +26,27 @@ int main(int agrc, char * argv[])
     exit(0); //exit process
     return 0;
 }
+
+// int remainingtime;
+
+// int main(int agrc, char * argv[])
+// {
+//     initClk();
+    
+//     //TODO it needs to get the remaining time from somewhere
+//     //remainingtime = ??;
+//     remainingtime = atoi(argv[1]);
+//     int currentTime = getclk(); // to skip the first tick
+//     while (remainingtime > 0)
+//     {
+//         if (getClk() == currentTime) continue;  // wait for next tick
+//             currentTime = getClk();
+//         remainingtime--; 
+//     }
+//     kill(getppid(), SIGUSR1); // signal the scheduler that this process has finished
+    
+//     destroyClk(false);
+    
+//     return 0;
+// }
+
