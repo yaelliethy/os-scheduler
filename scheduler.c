@@ -1,6 +1,7 @@
 #include "headers.h"
 #include <signal.h>
 #include "scheduler_output.h"
+#include <math.h>
 
 CircularQueue *queue;
 DoneQueue doneQueue;
@@ -9,59 +10,135 @@ PCB *currentProcess;
 int currentAlgorithm;
 int algoPid;
 
+float allWTAs[1000];
+float totalWaiting = 0;
+int totalRunTime = 0;
+int firstStartTime = -1;
+int lastFinishTime = 0;
+int processCount = 0;
+
 void startCurrentProcess()
 {
-    sleep(1);
+    sleep(1); // context switch overhead
     if (currentProcess->start_time == -1)
     {
-        int pid = fork();
+        // first time running - fork it
+        pid_t pid = fork();
         if (pid == 0)
         {
-            char id_str[10], runtime_str[10];
+            char remaining_str[10];
+            char id_str[10];
+            sprintf(remaining_str, "%d", currentProcess->remaining_time);
             sprintf(id_str, "%d", currentProcess->id);
-            sprintf(runtime_str, "%d", currentProcess->runtime);
-            execl("./process.out", "./process.out", id_str, runtime_str, NULL);
-            return;
+            execl("./process.out", "./process.out", id_str, remaining_str, NULL);
+            exit(1); // execl failed
         }
-        currentProcess->start_time = getClk();
         currentProcess->pid = pid;
-        log_started(currentProcess->start_time, currentProcess->id, currentProcess->arrival, currentProcess->runtime, currentProcess->remaining_time, 0);
+        currentProcess->start_time = getClk();
+        currentProcess->last_run_time = getClk();
+        currentProcess->status = RUNNING;
+        log_started(
+            currentProcess->start_time,
+            currentProcess->id,
+            currentProcess->arrival,
+            currentProcess->runtime,
+            currentProcess->remaining_time,
+            currentProcess->waiting_time
+        );
     }
     else
     {
+        // resuming - update waiting time first
+        currentProcess->waiting_time += getClk() - currentProcess->stop_time;
+        currentProcess->last_run_time = getClk();
         kill(currentProcess->pid, SIGCONT);
-        printf("Resuming process with pid %d at time %d\n", currentProcess->pid, getClk());
-        currentProcess->start_time = getClk();
-        log_resumed(currentProcess->start_time, currentProcess->id, currentProcess->arrival, currentProcess->runtime, currentProcess->remaining_time, getClk() - currentProcess->start_time);
+        currentProcess->status = RUNNING;
+        log_resumed(
+            getClk(),
+            currentProcess->id,
+            currentProcess->arrival,
+            currentProcess->runtime,
+            currentProcess->remaining_time,
+            currentProcess->waiting_time
+        );
     }
-    currentProcess->status = RUNNING;
 }
 
 void finishCurrentProcess()
 {
-    if (currentAlgorithm == 1)
-    {
-        PCB *temp;
-        dequeueCircular(queue, &temp);
-    }
-    else if (currentAlgorithm == 2)
-    {
-        removetop(&pq);
-    }
     currentProcess->end_time = getClk();
-    enqueueDone(&doneQueue, currentProcess);
-    log_finished(currentProcess->end_time, currentProcess->id, currentProcess->arrival, currentProcess->runtime, currentProcess->end_time - currentProcess->start_time, currentProcess->end_time - currentProcess->arrival, (float)(currentProcess->end_time - currentProcess->arrival) / currentProcess->runtime);
+    int TA = currentProcess->end_time - currentProcess->arrival;
+    float WTA = (float)TA / currentProcess->runtime;
+
+// update perf tracking
+    allWTAs[processCount] = WTA;
+    totalWaiting += currentProcess->waiting_time;
+    totalRunTime += currentProcess->runtime;
+    if (firstStartTime == -1) firstStartTime = currentProcess->start_time;
+    if (currentProcess->end_time > lastFinishTime) lastFinishTime = currentProcess->end_time;
+    processCount++;
+
+    // enqueue to done queue
+    enqueueDone(&doneQueue, *currentProcess);
+
+    log_finished(
+        currentProcess->end_time,
+        currentProcess->id,
+        currentProcess->arrival,
+        currentProcess->runtime,
+        currentProcess->waiting_time,
+        TA,
+        WTA
+    );
+
+    currentProcess = NULL; // CPU is now free
 }
 
 void stopCurrentProcess()
 {
-    printf("Stopping process with pid %d at time %d\n", currentProcess->pid, getClk());
+    currentProcess->remaining_time -= getClk() - currentProcess->last_run_time; // update remaining time
+    currentProcess->stop_time = getClk(); // save when it was stopped
     currentProcess->status = WAITING;
-    currentProcess->remaining_time -= getClk() - currentProcess->start_time;
-    printf("Process %d has remaining time %d\n", currentProcess->id, currentProcess->remaining_time);
     kill(currentProcess->pid, SIGSTOP);
-    log_stopped(getClk(), currentProcess->id, currentProcess->arrival, currentProcess->runtime, currentProcess->remaining_time, getClk() - currentProcess->start_time);
+    log_stopped(
+        getClk(),
+        currentProcess->id,
+        currentProcess->arrival,
+        currentProcess->runtime,
+        currentProcess->remaining_time,
+        currentProcess->waiting_time
+    );
 }
+
+void writePerf() {
+    // calculate averages
+    float sumWTA = 0;
+    for (int i = 0; i < processCount; i++) sumWTA += allWTAs[i];
+    float avgWTA = sumWTA / processCount;
+    float avgWaiting = totalWaiting / processCount;
+    float cpuUtil = ((float)totalRunTime / (lastFinishTime - firstStartTime)) * 100;
+
+    // calculate standard deviation
+    float stdWTA = 0;
+    for (int i = 0; i < processCount; i++) {
+        float diff = allWTAs[i] - avgWTA;
+        stdWTA += diff * diff;
+    }
+    stdWTA = sqrtf(stdWTA / processCount);
+
+    // write to file
+    FILE* perfFile = fopen("scheduler.perf", "w");
+    if (perfFile == NULL) {
+        perror("failed to open scheduler.perf");
+        return;
+    }
+    fprintf(perfFile, "CPU utilization = %.2f%%\n", cpuUtil);
+    fprintf(perfFile, "Avg WTA = %.2f\n", avgWTA);
+    fprintf(perfFile, "Avg Waiting = %.2f\n", avgWaiting);
+    fprintf(perfFile, "Std WTA = %.2f\n", stdWTA);
+    fclose(perfFile);
+}
+
 
 void processTerminationHandler(int signum)
 {
@@ -92,25 +169,24 @@ int main(int argc, char *argv[])
         exit(-1);
     }
 
-    if (currentAlgorithm == 1)
+    if (currentAlgorithm == 2)
     {
         algoPid = fork();
         if (algoPid == 0)
         {
+            int lastSwitch = getClk(); // track last switch time
             while (1)
             {
                 sleep(1);
-                if (isCircularQueueEmpty(queue)){
-                    printf("Circular queue is empty at time %d\n", getClk());
-                    continue;
-                }
-                int currentTime = getClk();
-                if (currentTime % quantum == 0)
+                if (isCircularQueueEmpty(queue)) continue;
+
+                if (getClk() - lastSwitch >= quantum)
                 {
-                    printf("Time quantum expired at time %d\n", currentTime);
                     stopCurrentProcess();
+                    enqueueCircular(queue, *currentProcess); // put back in queue
                     moveHeadCircular(queue, &currentProcess);
                     startCurrentProcess();
+                    lastSwitch = getClk(); // reset switch timer
                 }
             }
         }
@@ -125,55 +201,72 @@ int main(int argc, char *argv[])
             exit(-1);
         }
 
+        // process finished signal
         if (process.mtype != 1)
         {
-            finishCurrentProcess();
+            finishCurrentProcess(); // enqueues to done queue, sets currentProcess = NULL
             doneCount++;
-            if (doneCount == count)
+
+            if (doneCount == count) break; // all processes done
+
+            if (currentAlgorithm == 1) //HPF
             {
-                break;
-            }
-            if (currentAlgorithm == 2)
-            {
-                if (isEmpty(&pq))
-                    continue;
-                currentProcess = peek(&pq);
+                if (isEmpty(&pq)) continue;
+                PCB temp = removetop(&pq);
+                currentProcess = (PCB *)malloc(sizeof(PCB));
+                *currentProcess = temp; // ← removetop not peek
                 startCurrentProcess();
             }
             continue;
         }
 
+        // new process arrived
         PCB *pcb = (PCB *)malloc(sizeof(PCB));
         pcb->id = process.id;
         pcb->begin_time = getClk();
         pcb->start_time = -1;
         pcb->end_time = -1;
+        pcb->stop_time = -1;
         pcb->arrival = process.arrival;
         pcb->runtime = process.runtime;
         pcb->priority = process.priority;
         pcb->remaining_time = process.runtime;
+        pcb->waiting_time = 0;
+        pcb->status = READY;
 
-        if (firstProcess)
+        if (currentAlgorithm == 2) // RR
         {
-            currentProcess = pcb;
-            startCurrentProcess();
-            firstProcess = false;
+            enqueueCircular(queue, *pcb);
+            if (firstProcess)
+            {
+                moveHeadCircular(queue, &currentProcess);
+                startCurrentProcess();
+                firstProcess = false;
+            }
         }
-
-        if (currentAlgorithm == 1)
+        else if (currentAlgorithm == 1)
         {
-            enqueueCircular(queue, pcb);
-        }
-        else if (currentAlgorithm == 2)
-        {
-            insert(&pq, pcb);
-            printf("Top of priority queue is process with id %d and priority %d\n", peek(&pq)->id, peek(&pq)->priority);
-            if (pcb->priority < currentProcess->priority)
+            insert(&pq, *pcb);
+            if (firstProcess)
+            {
+                PCB temp = removetop(&pq);
+                currentProcess = (PCB *)malloc(sizeof(PCB));
+                *currentProcess = temp;
+                startCurrentProcess();
+                firstProcess = false;
+            }
+            // preemption check
+            else if (pcb->priority < currentProcess->priority)
             {
                 stopCurrentProcess();
-                currentProcess = pcb;
+                insert(&pq, *currentProcess); // put back in queue
+                *currentProcess = removetop(&pq);
                 startCurrentProcess();
             }
         }
     }
+
+    writePerf();
+    msgctl(msgqid, IPC_RMID, NULL);
+    destroyClk(true);
 }
