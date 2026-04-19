@@ -1,4 +1,4 @@
-#include <stdio.h>      //if you don't use scanf/printf change this include
+#include <stdio.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/file.h>
@@ -18,45 +18,24 @@ typedef short bool;
 #define SHKEY 300
 #define QUEUE_KEY 1234
 
-
-///==============================
-//don't mess with this variable//
-int * shmaddr;                 //
-//===============================
-
-
+int * shmaddr;
 
 int getClk()
 {
     return *shmaddr;
 }
 
-
-/*
- * All process call this function at the beginning to establish communication between them and the clock module.
- * Again, remember that the clock is only emulation!
-*/
 void initClk()
 {
     int shmid = shmget(SHKEY, 4, 0444);
     while ((int)shmid == -1)
     {
-        //Make sure that the clock exists
         printf("Wait! The clock not initialized yet!\n");
         sleep(1);
         shmid = shmget(SHKEY, 4, 0444);
     }
     shmaddr = (int *) shmat(shmid, (void *)0, 0);
 }
-
-
-/*
- * All process call this function at the end to release the communication
- * resources between them and the clock module.
- * Again, Remember that the clock is only emulation!
- * Input: terminateAll: a flag to indicate whether that this is the end of simulation.
- *                      It terminates the whole system and releases resources.
-*/
 
 void destroyClk(bool terminateAll)
 {
@@ -66,10 +45,13 @@ void destroyClk(bool terminateAll)
         killpg(getpgrp(), SIGINT);
     }
 }
+
 enum STATUS {
+    READY,
     RUNNING,
     WAITING
 };
+
 struct msgbuff {
     long mtype;
     int id;
@@ -78,8 +60,7 @@ struct msgbuff {
     int priority;
 };
 
-//Circular Queue Implementation for the Round Robin Scheduler, with custom fucntion to remove the process from the queue
-struct PCB {
+typedef struct {
     int id;
     int pid;
     int arrival;
@@ -90,11 +71,13 @@ struct PCB {
     int priority;
     int remaining_time;
     enum STATUS status;
-};
+} PCB;
+
 typedef struct NodeCircular {
-    struct PCB process;
+    PCB* process;
     struct NodeCircular* next;
 } NodeCircular;
+
 typedef struct CircularQueue {
     NodeCircular* front;
     NodeCircular* rear;
@@ -107,7 +90,7 @@ void initCircularQueue(CircularQueue* q) {
     q->size = 0;
 }
 
-void enqueueCircular(CircularQueue* q, struct PCB process) {
+void enqueueCircular(CircularQueue* q, PCB* process) {
     NodeCircular* newNode = (NodeCircular*)malloc(sizeof(NodeCircular));
     newNode->process = process;
     newNode->next = NULL;
@@ -120,127 +103,136 @@ void enqueueCircular(CircularQueue* q, struct PCB process) {
     }
     q->size++;
 }
-void dequeueCircular(CircularQueue* q, struct PCB* pcb) {
+
+void dequeueCircular(CircularQueue* q, PCB** pcb) {
     if (q->front == NULL) return;
     NodeCircular* temp = q->front;
     q->front = q->front->next;
     if (q->front == NULL) q->rear = NULL;
+    *pcb = temp->process;
     free(temp);
     q->size--;
-    *pcb = temp->process;
 }
-bool removeProcessCircular(CircularQueue* q, int id) {
+
+void moveHeadCircular(CircularQueue* q, PCB** newHead) {
+    if (q->front == NULL) return;
     NodeCircular* temp = q->front;
-    while (temp != NULL) {
-        if (temp->process.id == id) {
-            NodeCircular* temp2 = temp;
-            temp = temp->next;
-            free(temp2);
-            q->size--;
-            return 1;
-        }
-        temp = temp->next;
+    q->front = q->front->next;
+    if (q->front == NULL) q->rear = NULL;
+    temp->next = NULL;
+    if (q->rear == NULL) {
+        q->front = temp;
+        q->rear = temp;
+    } else {
+        q->rear->next = temp;
+        q->rear = temp;
     }
-    return 0;
+    *newHead = temp->process;
 }
+
 bool isCircularQueueEmpty(CircularQueue* q) {
     return q->size == 0;
 }
 
-// typedef enum {
-//     READY = 0,
-//     RUNNING = 1,
-//     STOPPED = 2
-// } ProcessState;
+typedef struct PriNode {
+    PCB* process;
+    struct PriNode* next;
+} PriNode;
 
-// typedef struct {
-//     int id;
-//     int arrivalTime;
-//     int runningTime;
-//     int remainingTime;
-//     int priority;
-//     int waitingTime;
-//     int startTime;
-//     int stopTime;
-//     int state;
-//     pid_t pid;
-// } PCB;
+typedef struct {
+    PriNode* head;
+    int size;
+} PriQueue;
 
-// typedef struct {
-//     PCB processes[MAX_PROCESSES];
-//     int size;
-// } PriQueue;
+void initializeQueue(PriQueue* pq) {
+    pq->head = NULL;
+    pq->size = 0;
+}
 
-// void initializeQueue(PriQueue * pq, int capacity) {
-//      pq->size = 0;
-// }
+void insert(PriQueue* pq, PCB* process) {
+    PriNode* newNode = (PriNode*)malloc(sizeof(PriNode));
+    newNode->process = process;
+    newNode->next = NULL;
 
-// void insert(PriQueue * pq, PCB process) {
-//     pq->processes[pq->size] = process;
-//     pq->size++;
-//     int i = pq->size - 1;
-//     while (i > 0) {
-//         int parent = (i-1)/2;
-//         if (pq->processes[parent].priority > pq->processes[i].priority){
-//             PCB temp = pq->processes[parent];
-//             pq->processes[parent] = pq->processes[i];
-//             pq->processes[i] = temp;
-//             i = parent;
-//         }
-//         else {
-//             break;
-//         }
+    if (pq->head == NULL || process->priority < pq->head->process->priority) {
+        newNode->next = pq->head;
+        pq->head = newNode;
+        pq->size++;
+        return;
+    }
 
-//     }
-// }
+    if (process->priority == pq->head->process->priority &&
+        process->arrival < pq->head->process->arrival) {
+        newNode->next = pq->head;
+        pq->head = newNode;
+        pq->size++;
+        return;
+    }
 
-// PCB removetop(PriQueue * pq) {
-//     if (pq->size == 0) {
-//         PCB empty = {0};
-//         return empty;
-//     }
-//     PCB top = pq->processes[0];
-//     pq->processes[0] = pq->processes[pq->size - 1];
-//     pq->size--;
-//     int i = 0;
-//     while (1) {
-//         int left = 2*i + 1;
-//         int right = 2*i + 2;
-//         int smallest;
-//         if (left < pq->size && right < pq->size){
-//             if (pq->processes[left].priority < pq->processes[right].priority){
-//                 smallest = left;
-//             }
-//             else {
-//                 smallest = right;
-//             }
-//         }
-//         else if (left < pq->size) {
-//             smallest = left;
-//         }
-//         else if (right < pq->size) {
-//             smallest = right;
-//         }
-//         if (pq->processes[i].priority > pq->processes[smallest].priority){
-//             PCB temp = pq->processes[i];
-//             pq->processes[i] = pq->processes[smallest];
-//             pq->processes[smallest] = temp;
-//             i = smallest;
-//         }
-//         else {
-//             break;
-//         }
-//     }
-//     return top;
-// }
+    PriNode* current = pq->head;
+    while (current->next != NULL) {
+        int nextPriority = current->next->process->priority;
+        int nextArrival = current->next->process->arrival;
 
-// PCB peek(PriQueue* pq){
-//     if (pq->size == 0) {
-//         PCB empty = {0};
-//         return empty;
-//     }
-//     return pq->processes[0];
-// }
-//  int isEmpty(PriQueue* pq){
-//     return pq->size == 0;
-// }
+        if (process->priority < nextPriority) {
+            break;
+        }
+        if (process->priority == nextPriority && process->arrival < nextArrival) {
+            break;
+        }
+        current = current->next;
+    }
+    newNode->next = current->next;
+    current->next = newNode;
+    pq->size++;
+}
+
+PCB* removetop(PriQueue* pq) {
+    if (pq->head == NULL) return NULL;
+    PriNode* temp = pq->head;
+    PCB* process = temp->process;
+    pq->head = pq->head->next;
+    free(temp);
+    pq->size--;
+    return process;
+}
+
+PCB* peek(PriQueue* pq) {
+    if (pq->head == NULL) return NULL;
+    return pq->head->process;
+}
+
+int isEmpty(PriQueue* pq) {
+    return pq->head == NULL;
+}
+
+typedef struct DoneNode {
+    PCB* process;
+    struct DoneNode* next;
+} DoneNode;
+
+typedef struct {
+    DoneNode* head;
+    DoneNode* tail;
+    int size;
+} DoneQueue;
+
+void initDoneQueue(DoneQueue* dq) {
+    dq->head = NULL;
+    dq->tail = NULL;
+    dq->size = 0;
+}
+
+void enqueueDone(DoneQueue* dq, PCB* process) {
+    DoneNode* newNode = (DoneNode*)malloc(sizeof(DoneNode));
+    newNode->process = process;
+    newNode->next = NULL;
+    if (dq->tail == NULL) {
+        dq->head = newNode;
+        dq->tail = newNode;
+    } else {
+        dq->tail->next = newNode;
+        dq->tail = newNode;
+    }
+    dq->size++;
+}

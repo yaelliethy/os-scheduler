@@ -33,7 +33,7 @@ int main(int argc, char * argv[])
     int algo, quantum = 0;
     while (1) 
 {
-    printf("Select algorithm [1:HPF,2:RR,3:FCFS]: ");
+    printf("Select algorithm [1:RR,2:HPF,3:FCFS]: ");
 
     if (scanf("%d", &algo) != 1) 
     {
@@ -47,7 +47,7 @@ int main(int argc, char * argv[])
 
     printf("Invalid.Enter 1/2/3\n");
 }
-if (algo == 2) 
+if (algo == 1) 
 {
     while (1) 
     {

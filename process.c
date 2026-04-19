@@ -3,27 +3,40 @@
 /* Modify this file as needed*/
 int remainingtime;
 int id;
-int main(int agrc, char * argv[])
+int main(int agrc, char *argv[])
 {
     initClk();
     id = atoi(argv[1]);
-    
-    //TODO it needs to get the remaining time from somewhere
-    //remainingtime = ??;
+
+    // TODO it needs to get the remaining time from somewhere
+    // remainingtime = ??;
+    remainingtime = atoi(argv[2]);
+    printf("Process %d started with remaining time %d at time %d\n", id, remainingtime, getClk());
+    int currentTime = getClk(); // to skip the first tick
     while (remainingtime > 0)
     {
-        // remainingtime = ??;
+        if (getClk() == currentTime)
+            continue; // wait for next tick
+        currentTime = getClk();
+        remainingtime--;
+        usleep(100000); // sleep for 100ms to avoid busy waiting
     }
-    
-    destroyClk(false);
-    //Add to message queue that it finished
+    // Add to message queue that it finished
     struct msgbuff process;
     process.mtype = 2;
     process.id = id;
-    if (msgsnd(QUEUE_KEY, &process, sizeof(process), !IPC_NOWAIT) == -1) {
+    int msqid = msgget(QUEUE_KEY, 0666 | IPC_CREAT);
+    if (msqid == -1)
+    {
+        perror("msgget failed");
+        exit(1);
+    }
+    printf("Process %d finished at time %d\n", id, getClk());
+    if (msgsnd(msqid, &process, sizeof(process) - sizeof(long), 0) == -1)
+    {
         perror("Error sending message");
     }
-    exit(0); //exit process
+    destroyClk(false);
     return 0;
 }
 
@@ -32,7 +45,7 @@ int main(int agrc, char * argv[])
 // int main(int agrc, char * argv[])
 // {
 //     initClk();
-    
+
 //     //TODO it needs to get the remaining time from somewhere
 //     //remainingtime = ??;
 //     remainingtime = atoi(argv[1]);
@@ -41,12 +54,11 @@ int main(int agrc, char * argv[])
 //     {
 //         if (getClk() == currentTime) continue;  // wait for next tick
 //             currentTime = getClk();
-//         remainingtime--; 
+//         remainingtime--;
 //     }
 //     kill(getppid(), SIGUSR1); // signal the scheduler that this process has finished
-    
+
 //     destroyClk(false);
-    
+
 //     return 0;
 // }
-
