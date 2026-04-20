@@ -25,17 +25,7 @@ int main(int agrc, char *argv[])
     struct msgbuff process;
     process.mtype = 2;
     process.id = id;
-    int msqid = msgget(QUEUE_KEY, 0666 | IPC_CREAT);
-    if (msqid == -1)
-    {
-        perror("msgget failed");
-        exit(1);
-    }
-    printf("Process %d finished at time %d\n", id, getClk());
-    if (msgsnd(msqid, &process, sizeof(process) - sizeof(long), 0) == -1)
-    {
-        perror("Error sending message");
-    }
+    kill(getppid(), SIGUSR1);
     destroyClk(false);
     return 0;
 }

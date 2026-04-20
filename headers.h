@@ -93,11 +93,13 @@ void initCircularQueue(CircularQueue* q) {
 void enqueueCircular(CircularQueue* q, PCB* process) {
     NodeCircular* newNode = (NodeCircular*)malloc(sizeof(NodeCircular));
     newNode->process = process;
-    newNode->next = NULL;
+    
     if (q->rear == NULL) {
+        newNode->next = newNode;
         q->front = newNode;
         q->rear = newNode;
     } else {
+        newNode->next = q->front;
         q->rear->next = newNode;
         q->rear = newNode;
     }
@@ -107,33 +109,35 @@ void enqueueCircular(CircularQueue* q, PCB* process) {
 void dequeueCircular(CircularQueue* q, PCB** pcb) {
     if (q->front == NULL) return;
     NodeCircular* temp = q->front;
-    q->front = q->front->next;
-    if (q->front == NULL) q->rear = NULL;
     *pcb = temp->process;
+    
+    if (q->front == q->rear) {
+        q->front = NULL;
+        q->rear = NULL;
+    } else {
+        q->front = q->front->next;
+        q->rear->next = q->front;
+    }
     free(temp);
     q->size--;
 }
 
 void moveHeadCircular(CircularQueue* q, PCB** newHead) {
-    if (q->front == NULL) return;
-    NodeCircular* temp = q->front;
+    if (q->front == NULL || q->size <= 1) return;
+    
+    // Rotate: move front to rear
     q->front = q->front->next;
-    if (q->front == NULL) q->rear = NULL;
-    temp->next = NULL;
-    if (q->rear == NULL) {
-        q->front = temp;
-        q->rear = temp;
-    } else {
-        q->rear->next = temp;
-        q->rear = temp;
-    }
-    *newHead = temp->process;
+    q->rear = q->rear->next;
+    
+    *newHead = q->front->process;
 }
 
 bool isCircularQueueEmpty(CircularQueue* q) {
     return q->size == 0;
 }
-
+int circularQueueSize(CircularQueue* q) {
+    return q->size;
+}
 typedef struct PriNode {
     PCB* process;
     struct PriNode* next;
