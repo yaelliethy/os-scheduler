@@ -17,7 +17,10 @@ typedef short bool;
 
 #define SHKEY 300
 #define QUEUE_KEY 1234
-
+#define QUEUE_KEY2 5678
+#define SHQUEUE1 91011
+#define SHQUEUE2 10112
+#define SHDONE 13141
 int * shmaddr;
 
 int getClk()
@@ -239,4 +242,121 @@ void enqueueDone(DoneQueue* dq, PCB* process) {
         dq->tail = newNode;
     }
     dq->size++;
+}
+void dequeueDone(DoneQueue* dq, PCB** pcb) {
+    if (dq->head == NULL) return;
+    DoneNode* temp = dq->head;
+    *pcb = temp->process;
+    dq->head = dq->head->next;
+    if (dq->head == NULL) {
+        dq->tail = NULL;
+    }
+    free(temp);
+    dq->size--;
+}
+typedef struct NodeDeque {
+    PCB* process;
+    struct NodeDeque* next;
+    struct NodeDeque* prev;
+} NodeDeque;
+
+typedef struct Deque {
+    NodeDeque* front;
+    NodeDeque* rear;
+    int size;
+} Deque;
+
+void initDeque(Deque* q) {
+    q->front = NULL;
+    q->rear = NULL;
+    q->size = 0;
+}
+
+void pushFront(Deque* q, PCB* process) {
+    NodeDeque* newNode = (NodeDeque*)malloc(sizeof(NodeDeque));
+    newNode->process = process;
+
+    if (q->front == NULL) {
+        newNode->next = NULL;
+        newNode->prev = NULL;
+        q->front = newNode;
+        q->rear = newNode;
+    } else {
+        newNode->next = q->front;
+        newNode->prev = NULL;
+        q->front->prev = newNode;
+        q->front = newNode;
+    }
+
+    q->size++;
+}
+
+void pushRear(Deque* q, PCB* process) {
+    NodeDeque* newNode = (NodeDeque*)malloc(sizeof(NodeDeque));
+    newNode->process = process;
+
+    if (q->rear == NULL) {
+        newNode->next = NULL;
+        newNode->prev = NULL;
+        q->front = newNode;
+        q->rear = newNode;
+    } else {
+        newNode->prev = q->rear;
+        newNode->next = NULL;
+        q->rear->next = newNode;
+        q->rear = newNode;
+    }
+
+    q->size++;
+}
+
+void popFront(Deque* q, PCB** pcb) {
+    if (q->front == NULL) return;
+
+    NodeDeque* temp = q->front;
+    *pcb = temp->process;
+
+    if (q->front == q->rear) {
+        q->front = NULL;
+        q->rear = NULL;
+    } else {
+        q->front = q->front->next;
+        q->front->prev = NULL;
+    }
+
+    free(temp);
+    q->size--;
+}
+
+void popRear(Deque* q, PCB** pcb) {
+    if (q->rear == NULL) return;
+
+    NodeDeque* temp = q->rear;
+    *pcb = temp->process;
+
+    if (q->front == q->rear) {
+        q->front = NULL;
+        q->rear = NULL;
+    } else {
+        q->rear = q->rear->prev;
+        q->rear->next = NULL;
+    }
+
+    free(temp);
+    q->size--;
+}
+PCB* peekFront(Deque* q) {
+    if (q->front == NULL) return NULL;
+    return q->front->process;
+}
+PCB* peekRear(Deque* q) {
+    if (q->rear == NULL) return NULL;
+    return q->rear->process;
+}
+bool isDequeEmpty(Deque* q) {
+    return q->size == 0;
+}
+
+int dequeSize(Deque* q) {
+    return q->size;
 }
