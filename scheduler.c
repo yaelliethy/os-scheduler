@@ -3,7 +3,6 @@
 #include "scheduler_output.h"
 
 CircularQueue *queue;
-DoneQueue* doneQueue;
 Deque *deque;
 PriQueue *pq;
 PCB *currentProcess;
@@ -11,6 +10,22 @@ int currentAlgorithm;
 int* doneCountPtr;
 int processStartTime;
 int cpu_number;
+
+float *allWTAs;
+float totalWaiting = 0.0f;
+int totalRunTime = 0;
+int firstStartTime = -1;
+int lastFinishTime = 0;
+int completedForPerf = 0;
+int processTarget = 0;
+
+static inline int calculate_waiting_time(PCB *process, int currentTime)
+{
+    int executedTime = process->runtime - process->remaining_time;
+    int waiting = currentTime - process->arrival - executedTime;
+    return waiting < 0 ? 0 : waiting;
+}
+
 void startCurrentProcess()
 {
     sleep(1);
@@ -28,13 +43,15 @@ void startCurrentProcess()
         }
         currentProcess->start_time = currentTime;
         currentProcess->pid = pid;
-        log_started(currentProcess->start_time, currentProcess->id, currentProcess->arrival, currentProcess->runtime, currentProcess->remaining_time, 0, cpu_number);
+        if (firstStartTime == -1)
+            firstStartTime = currentTime;
+        log_started(currentProcess->start_time, currentProcess->id, currentProcess->arrival, currentProcess->runtime, currentProcess->remaining_time, calculate_waiting_time(currentProcess, currentTime), cpu_number);
     }
     else
     {
         kill(currentProcess->pid, SIGCONT);
         currentProcess->start_time = currentTime;
-        log_resumed(currentProcess->start_time, currentProcess->id, currentProcess->arrival, currentProcess->runtime, currentProcess->remaining_time, getClk() - currentProcess->start_time, cpu_number);
+        log_resumed(currentProcess->start_time, currentProcess->id, currentProcess->arrival, currentProcess->runtime, currentProcess->remaining_time, calculate_waiting_time(currentProcess, currentTime), cpu_number);
     }
     currentProcess->status = RUNNING;
     processStartTime = currentTime;
@@ -42,8 +59,24 @@ void startCurrentProcess()
 
 void finishCurrentProcess()
 {
+    if (currentProcess == NULL)
+        return;
+
     int currentTime = getClk();
-    log_finished(currentTime, currentProcess->id, currentProcess->arrival, currentProcess->runtime, currentTime - currentProcess->start_time, currentTime - currentProcess->arrival, (float)(currentTime - currentProcess->arrival) / currentProcess->runtime, cpu_number);
+    int ta = currentTime - currentProcess->arrival;
+    int waiting = ta - currentProcess->runtime;
+    waiting = waiting < 0 ? 0 : waiting;
+    float wta = (float)ta / currentProcess->runtime;
+
+    if (completedForPerf < processTarget)
+        allWTAs[completedForPerf] = wta;
+    totalWaiting += waiting;
+    totalRunTime += currentProcess->runtime;
+    if (currentTime > lastFinishTime)
+        lastFinishTime = currentTime;
+    completedForPerf++;
+
+    log_finished(currentTime, currentProcess->id, currentProcess->arrival, currentProcess->runtime, waiting, ta, wta, cpu_number);
     if (currentAlgorithm == 1)
     {
         PCB *temp;
@@ -70,7 +103,6 @@ void finishCurrentProcess()
         }
     }
     currentProcess->end_time = currentTime;
-    enqueueDone(doneQueue, currentProcess);
 }
 
 void stopCurrentProcess()
@@ -79,7 +111,7 @@ void stopCurrentProcess()
     currentProcess->status = WAITING;
     currentProcess->remaining_time -= currentTime - currentProcess->start_time;
     currentProcess->remaining_time = currentProcess->remaining_time < 0 ? 0 : currentProcess->remaining_time;
-    log_stopped(currentTime, currentProcess->id, currentProcess->arrival, currentProcess->runtime, currentProcess->remaining_time, currentTime - currentProcess->start_time, cpu_number);
+    log_stopped(currentTime, currentProcess->id, currentProcess->arrival, currentProcess->runtime, currentProcess->remaining_time, calculate_waiting_time(currentProcess, currentTime), cpu_number);
     kill(currentProcess->pid, SIGSTOP);
 }
 
@@ -93,53 +125,29 @@ void processFinishedHandler(int signum)
     (*doneCountPtr)++;
 }
 void writePerf() {
-    if (doneQueue == NULL || doneQueue->size == 0) {
+    if (completedForPerf == 0) {
         write_scheduler_perf(0.0f, 0.0f, 0.0f, 0.0f);
         return;
     }
 
-    int completed = 0;
-    int totalRuntime = 0;
-    float totalWaiting = 0.0f;
+    float sumWTA = 0.0f;
+    for (int i = 0; i < completedForPerf; i++)
+        sumWTA += allWTAs[i];
 
-    int firstArrival = -1;
-    int lastFinish = -1;
+    float avgWTA = sumWTA / completedForPerf;
+    float avgWaiting = totalWaiting / completedForPerf;
 
-    float meanWTA = 0.0f;
-    float m2WTA = 0.0f;
-
-    for (DoneNode* node = doneQueue->head; node != NULL; node = node->next) {
-        PCB* p = node->process;
-        if (p == NULL || p->runtime <= 0 || p->end_time < 0) continue;
-
-        int ta = p->end_time - p->arrival;
-        float wta = (float)ta / (float)p->runtime;
-        float waiting = (float)(ta - p->runtime);
-
-        completed++;
-        totalRuntime += p->runtime;
-        totalWaiting += waiting;
-
-        float delta = wta - meanWTA;
-        meanWTA += delta / completed;
-        m2WTA += delta * (wta - meanWTA);
-
-        if (firstArrival == -1 || p->arrival < firstArrival) firstArrival = p->arrival;
-        if (lastFinish == -1 || p->end_time > lastFinish) lastFinish = p->end_time;
+    float stdWTA = 0.0f;
+    for (int i = 0; i < completedForPerf; i++)
+    {
+        float diff = allWTAs[i] - avgWTA;
+        stdWTA += diff * diff;
     }
-
-    if (completed == 0) {
-        write_scheduler_perf(0.0f, 0.0f, 0.0f, 0.0f);
-        return;
-    }
-
-    float avgWTA = meanWTA;
-    float avgWaiting = totalWaiting / completed;
-    float stdWTA = sqrtf(m2WTA / completed);
+    stdWTA = sqrtf(stdWTA / completedForPerf);
 
     float cpuUtil = 0.0f;
-    if (firstArrival != -1 && lastFinish > firstArrival) {
-        cpuUtil = ((float)totalRuntime / (float)(lastFinish - firstArrival)) * 100.0f;
+    if (firstStartTime != -1 && lastFinishTime > firstStartTime) {
+        cpuUtil = ((float)totalRunTime / (float)(lastFinishTime - firstStartTime)) * 100.0f;
     }
 
     write_scheduler_perf(cpuUtil, avgWTA, avgWaiting, stdWTA);
@@ -151,6 +159,13 @@ int main(int argc, char *argv[])
     cpu_number = atoi(argv[4]);
     int quantum = atoi(argv[2]);
     int count = atoi(argv[3]);
+    processTarget = count;
+    allWTAs = (float *)malloc(sizeof(float) * count);
+    if (allWTAs == NULL)
+    {
+        perror("Error allocating WTA array");
+        exit(-1);
+    }
     //if currentAlgorithm is 3, make a shared memory for each CPU's queue
     int shmid;
     if(currentAlgorithm == 3){
@@ -163,9 +178,7 @@ int main(int argc, char *argv[])
     }
     pq = (PriQueue*)malloc(sizeof(PriQueue));
     queue = (CircularQueue*)malloc(sizeof(CircularQueue));
-    doneQueue = (DoneQueue*)malloc(sizeof(DoneQueue));
     initCircularQueue(queue);
-    initDoneQueue(doneQueue);
     initializeQueue(pq);
     signal(SIGTERM, processTerminationHandler);
     signal(SIGUSR1, processFinishedHandler);
@@ -219,6 +232,8 @@ int main(int argc, char *argv[])
         }
         if (process.mtype == 2) // Remove from this CPU's dequeue and add to the other CPU's queue
         {
+            sleep(3);
+            currentTime = getClk();
             PCB *temp;
             popRear(deque, &temp);
             if(temp == NULL || temp->id == currentProcess->id) continue; // Don't move if the process is currently running or if the deque is empty
@@ -277,4 +292,5 @@ int main(int argc, char *argv[])
     shmdt(shmaddr);
     shmctl(doneCountShmid, IPC_RMID, NULL);
     if(currentAlgorithm == 3)  shmctl(shmid, IPC_RMID, NULL);
+    free(allWTAs);
 }

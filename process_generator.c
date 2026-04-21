@@ -159,17 +159,21 @@ int main(int argc, char *argv[])
         }
         if(algo == 3 && currentTime % N == 0){
             //If difference between queues is greater than M, move process from larger queue to smaller queue
-            int size1 = deque1->size;
-            int size2 = deque2->size;
-            if(size1 - size2 > M || size2 - size1 > M){
-                struct msgbuff msg;
-                msg.mtype = 2;
-                if(size1 > size2){
-                    msgsnd(msgqid, &msg, sizeof(msg) - sizeof(long), IPC_NOWAIT);
+            while (1){
+                int size1 = deque1->size;
+                int size2 = deque2->size;
+                if(size1 - size2 > M || size2 - size1 > M){
+                    struct msgbuff msg;
+                    msg.mtype = 2;
+                    if(size1 > size2){
+                        msgsnd(msgqid, &msg, sizeof(msg) - sizeof(long), IPC_NOWAIT);
+                    }
+                    else{
+                        msgsnd(msgqid2, &msg, sizeof(msg) - sizeof(long), IPC_NOWAIT);
+                    }
                 }
-                else{
-                    msgsnd(msgqid2, &msg, sizeof(msg) - sizeof(long), IPC_NOWAIT);
-                }
+                else
+                    break;
             }
         }
         prvTime = currentTime;
