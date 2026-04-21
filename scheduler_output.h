@@ -72,9 +72,16 @@ static inline void log_finished(int time, int pid, int arrival, int runtime, int
     fflush(f);
 }
 static inline void write_scheduler_perf(float CPU_utilization,float avg_WTA,float avg_Waiting,
-                                            float std_WTA)
+                                            float std_WTA, int cpuid)
 {
-    FILE *f = fopen("scheduler.perf", "w");
+    char filename[256];
+    if(cpuid == 0){
+        snprintf(filename, sizeof(filename), "scheduler.perf");
+    }
+    else{
+        snprintf(filename, sizeof(filename), "scheduler_%d.perf", cpuid);
+    }
+    FILE *f = fopen(filename, "w");
     if (f == NULL) {
         perror("failed to open scheduler.perf");
         return;

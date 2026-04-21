@@ -126,7 +126,7 @@ void processFinishedHandler(int signum)
 }
 void writePerf() {
     if (completedForPerf == 0) {
-        write_scheduler_perf(0.0f, 0.0f, 0.0f, 0.0f);
+        write_scheduler_perf(0.0f, 0.0f, 0.0f, 0.0f, cpu_number);
         return;
     }
 
@@ -150,7 +150,7 @@ void writePerf() {
         cpuUtil = ((float)totalRunTime / (float)(lastFinishTime - firstStartTime)) * 100.0f;
     }
 
-    write_scheduler_perf(cpuUtil, avgWTA, avgWaiting, stdWTA);
+    write_scheduler_perf(cpuUtil, avgWTA, avgWaiting, stdWTA, cpu_number);
 }
 int main(int argc, char *argv[])
 {
@@ -210,6 +210,7 @@ int main(int argc, char *argv[])
         exit(-1);
     }
     processStartTime = -1;
+    printf("Scheduler started with algorithm %d, quantum %d, total processes %d on CPU %d\n", currentAlgorithm, quantum, count, cpu_number);
     while (*doneCountPtr < count)
     {
         int currentTime = getClk();
@@ -288,6 +289,9 @@ int main(int argc, char *argv[])
 
     // Clean up message queue and shared memory
     msgctl(msgqid, IPC_RMID, NULL);
+    if(currentAlgorithm == 3){
+        msgctl(other_msgqid, IPC_RMID, NULL);
+    }
     shmdt(doneCountPtr);
     shmdt(shmaddr);
     shmctl(doneCountShmid, IPC_RMID, NULL);
