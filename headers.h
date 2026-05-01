@@ -73,6 +73,7 @@ typedef struct {
     int runtime;
     int priority;
     int remaining_time;
+    int page_table_frame_i;
     enum STATUS status;
 } PCB;
 

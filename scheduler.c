@@ -1,6 +1,7 @@
 #include "headers.h"
 #include <signal.h>
 #include "scheduler_output.h"
+#include "memory.h"
 
 CircularQueue *queue;
 Deque *deque;
@@ -11,6 +12,7 @@ int* doneCountPtr;
 int processStartTime;
 int cpu_number;
 
+Frame physical_memory[TOTAL_FRAMES];
 float *allWTAs;
 float totalWaiting = 0.0f;
 int totalRunTime = 0;
@@ -266,6 +268,13 @@ int main(int argc, char *argv[])
         }
         if (currentAlgorithm == 1)
         {
+            int frame_index = getfreeframe(physical_memory);
+            if (frame_index != -1) {
+                allocate_frame(physical_memory, pcb->id, frame_index, -1, 1); // frame for page table
+                pcb->page_table_frame_i = frame_index;
+            } else {
+                // NRU page replacement
+            }
             enqueueCircular(queue, pcb);
         }
         if (currentAlgorithm == 2)
