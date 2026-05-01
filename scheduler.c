@@ -96,7 +96,6 @@ void finishCurrentProcess() {
 void stopCurrentProcess() {
     int currentTime = getClk();
 
-    /* ── CHANGE 1: Accumulate CPU time before stopping ── */
     if (currentProcess->start_time != -1) {
         int burstTime = currentTime - currentProcess->start_time;
         currentProcess->cpu_time_used += burstTime;
@@ -170,7 +169,7 @@ int main(int argc, char *argv[]) {
     while (*doneCountPtr < count) {
         int currentTime = getClk();
 
-        /* ── CHANGE 2: Handle Memory Requests for Running Process ── */
+ 
         if (currentProcess != NULL && currentProcess->status == RUNNING) {
             int elapsed = currentTime - currentProcess->start_time;
             int cpu_now = currentProcess->cpu_time_used + elapsed;
