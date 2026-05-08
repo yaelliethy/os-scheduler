@@ -73,6 +73,7 @@ void setPageEntry(PageTable *pt, int pageNum, int frameNum)
 {
     if (pt == NULL) return;
     if (pageNum < 0 || pageNum >= pt->limit) return;
+    if (frameNum < 0) return;
     pt->entries[pageNum].frameNumber = frameNum;
     pt->entries[pageNum].valid = 1;
     pt->entries[pageNum].R = 0;
