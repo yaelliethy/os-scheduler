@@ -11,6 +11,15 @@
 #include <unistd.h>
 #include <signal.h>
 
+#define MAX_REQUESTS 256   
+#define PAGE_SIZE    16    
+
+typedef struct {
+    int  cpu_time;         //cpu time when this fires 
+    int  virtual_address;  
+    char rw;               // r for read w for write
+} MemRequest;
+
 typedef short bool;
 #define true 1
 #define false 0
@@ -57,11 +66,15 @@ enum STATUS {
 
 struct msgbuff {
     long mtype;
-    int id;
-    int arrival;
-    int runtime;
-    int priority;
+    int  id;
+    int  arrival;
+    int  runtime;
+    int  priority;
+    int  base;             //starting page number on disk           
+    int  limit;            // number of virtual pages for this proc  
 };
+
+struct PageTable;
 
 typedef struct {
     int id;
@@ -75,6 +88,14 @@ typedef struct {
     int remaining_time;
     int page_table_frame_i;
     enum STATUS status;
+
+    int  base;                      
+    int  limit;                    
+    struct PageTable *page_table;   // Member 3 will populate     
+    int  cpu_time_used;
+    MemRequest requests[MAX_REQUESTS];
+    int  req_count;
+    int  next_req;
 } PCB;
 
 typedef struct NodeCircular {
