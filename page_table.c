@@ -56,6 +56,7 @@ int translateAddress(PageTable *pt, int VA)
     if (pageNum< 0 || offset <0) return -1;
     if (!isPageValid(pt, pageNum)) return -1;
     int frameNum = pt->entries[pageNum].frameNumber;
+    if (frameNum < 0) return -1;
     return frameNum * PAGE_SIZE + offset;
 }
 
