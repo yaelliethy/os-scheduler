@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#define null 0
 
 struct processData
 {
@@ -19,7 +18,7 @@ int main(int argc, char * argv[])
     struct processData pData;
     printf("Please enter the number of processes you want to generate: ");
     scanf("%d", &no);
-    srand(time(null));
+    srand(time(NULL));
     //fprintf(pFile,"%d\n",no);
     fprintf(pFile, "#id arrival runtime priority base limit\n");
     pData.arrivaltime = 1;

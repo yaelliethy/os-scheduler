@@ -32,11 +32,11 @@ static int find_free_frame(void) {
 }
 
 static int select_nru_victim(int *modified_out) {
-    for (int cls = 0; cls < 4; cls++) {
+    for (int nru_class = 0; nru_class < 4; nru_class++) {
         for (int i = 0; i < NUM_FRAMES; i++) {
             if (!frames[i].in_use || frames[i].is_page_table || frames[i].locked) continue;
-            int cls_val = (frames[i].R ? 2 : 0) + (frames[i].M ? 1 : 0);
-            if (cls_val == cls) {
+            int class_val = (frames[i].R ? 2 : 0) + (frames[i].M ? 1 : 0);
+            if (class_val == nru_class) {
                 if (modified_out) *modified_out = frames[i].M;
                 return i;
             }
