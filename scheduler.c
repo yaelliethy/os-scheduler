@@ -3,6 +3,8 @@
 #include <string.h>
 #include "scheduler_output.h"
 #include "mmu.h"
+#include <errno.h>
+#include "memory.h"
 
 CircularQueue *queue;
 Deque *deque;
@@ -14,6 +16,7 @@ int processStartTime;
 int cpu_number;
 int r_reset_k;
 
+Frame physical_memory[TOTAL_FRAMES];
 float *allWTAs;
 float totalWaiting = 0.0f;
 int totalRunTime = 0;
@@ -156,7 +159,10 @@ void finishCurrentProcess() {
     // Reset currentProcess pointer before picking next
     PCB* finished = currentProcess;
     finished->end_time = currentTime;
-    mmu_free_process(finished);
+    if (finished->page_table_frame_i != -1) {
+        free_process_frames(physical_memory, finished->id);
+        finished->page_table_frame_i = -1;
+    }
 
     if (currentAlgorithm == 1) {
         PCB *temp;
@@ -243,6 +249,7 @@ int main(int argc, char *argv[]) {
     queue = (CircularQueue*)malloc(sizeof(CircularQueue));
     initCircularQueue(queue);
     initializeQueue(pq);
+    initialize_frames(physical_memory);
     signal(SIGTERM, processTerminationHandler);
     signal(SIGUSR1, processFinishedHandler);
 
@@ -305,9 +312,11 @@ int main(int argc, char *argv[]) {
             if (incoming.mtype == 2) { /* Load Balancing Logic */
                 PCB *temp;
                 popRear(deque, &temp);
-                if(temp != NULL && temp->id != currentProcess->id) {
-                    struct msgbuff msg = { .mtype = 1, .id = temp->id, .arrival = temp->arrival, .runtime = temp->runtime, .priority = temp->priority };
-                    msgsnd(other_msgqid, &msg, sizeof(msg) - sizeof(long), IPC_NOWAIT);
+                if (temp != NULL) {
+                    if (currentProcess == NULL || temp->id != currentProcess->id) {
+                        struct msgbuff msg = { .mtype = 1, .id = temp->id, .arrival = temp->arrival, .runtime = temp->runtime, .priority = temp->priority, .base = temp->base, .limit = temp->limit };
+                        msgsnd(other_msgqid, &msg, sizeof(msg) - sizeof(long), IPC_NOWAIT);
+                    }
                 }
                 continue;
             }
@@ -320,13 +329,31 @@ int main(int argc, char *argv[]) {
             pcb->remaining_time = incoming.runtime;
             pcb->base = incoming.base;
             pcb->limit = incoming.limit;
+            pcb->begin_time = currentTime;
+            pcb->end_time = -1;
+            pcb->pid = -1;
             pcb->cpu_time_used = 0;
             pcb->next_req = 0;
             pcb->start_time = -1;
-            pcb->page_table = NULL;
-            pcb->page_table_frame = -1;
             pcb->status = READY;
-            pcb->req_count = load_requests(pcb->id, pcb->requests);
+            pcb->page_table_frame_i = -1;
+            pcb->req_count = 0;
+
+            if (currentAlgorithm == 1) {
+                int frame_index = getfreeframe(physical_memory);
+                if (frame_index == -1) {
+                    bool requeued = (msgsnd(msgqid, &incoming, sizeof(incoming) - sizeof(long), IPC_NOWAIT) != -1);
+                    if (!requeued) {
+                        fprintf(stderr, "Failed to re-queue process %d when frames full: %s\n", pcb->id, strerror(errno));
+                        free(pcb);
+                        continue;
+                    }
+                    free(pcb);
+                    continue;
+                }
+                allocate_frame(physical_memory, pcb->id, frame_index, -1, 1);
+                pcb->page_table_frame_i = frame_index;
+            }
 
             if (firstProcess) {
                 currentProcess = pcb;

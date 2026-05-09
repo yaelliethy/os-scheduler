@@ -80,15 +80,16 @@ struct msgbuff {
 };
 
 typedef struct {
-    int  id;
-    int  pid;
-    int  arrival;
-    int  begin_time;
-    int  start_time;
-    int  end_time;
-    int  runtime;
-    int  priority;
-    int  remaining_time;
+    int id;
+    int pid;
+    int arrival;
+    int begin_time;
+    int start_time;
+    int end_time;
+    int runtime;
+    int priority;
+    int remaining_time;
+    int page_table_frame_i;
     enum STATUS status;
 
     int  base;                      
