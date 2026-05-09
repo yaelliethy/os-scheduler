@@ -236,8 +236,11 @@ int main(int argc, char *argv[]) {
             if (currentAlgorithm == 1) {
                 int frame_index = getfreeframe(physical_memory);
                 if (frame_index == -1) {
-                    if (msgsnd(msgqid, &incoming, sizeof(incoming) - sizeof(long), IPC_NOWAIT) == -1) {
-                        perror("Message queue error while re-queuing deferred process");
+                    bool requeued = (msgsnd(msgqid, &incoming, sizeof(incoming) - sizeof(long), IPC_NOWAIT) != -1);
+                    if (!requeued) {
+                        perror("Failed to re-queue process when frames full");
+                        free(pcb);
+                        continue;
                     }
                     free(pcb);
                     usleep(FRAME_RETRY_DELAY_US);
