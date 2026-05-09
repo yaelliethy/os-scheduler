@@ -36,12 +36,17 @@ static BlockedNode *blockedHead = NULL;
 void startCurrentProcess();
 void stopCurrentProcess();
 
-static int parse_binary_string(const char *s) {
-    int val = 0;
-    while (*s) {
-        val = (val << 1) | (*s++ - '0');
+static int parse_address_string(const char *s) {
+    char *end = NULL;
+    long val = strtol(s, &end, 0);
+    if (end != NULL && end != s) {
+        return (int)val;
     }
-    return val;
+    int bin = 0;
+    while (*s == '0' || *s == '1') {
+        bin = (bin << 1) | (*s++ - '0');
+    }
+    return bin;
 }
 
 static int load_requests(int id, MemRequest *out) {
@@ -57,7 +62,7 @@ static int load_requests(int id, MemRequest *out) {
         if (line[0] == '#' || line[0] == '\n') continue;
         if (sscanf(line, "%d %63s %c", &cpu_time, addr_str, &rw_char) == 3) {
             out[count].cpu_time = cpu_time;
-            out[count].virtual_address = parse_binary_string(addr_str);
+                out[count].virtual_address = parse_address_string(addr_str);
             strncpy(out[count].va_str, addr_str, sizeof(out[count].va_str) - 1);
             out[count].va_str[sizeof(out[count].va_str) - 1] = '\0';
             out[count].rw = rw_char;
@@ -112,9 +117,10 @@ static inline int calculate_waiting_time(PCB *process, int currentTime) {
 }
 
 void startCurrentProcess() {
+    int allocTime = getClk();
     if (currentProcess->page_table == NULL) {
         mmu_allocate_page_table(currentProcess);
-        mmu_load_initial_page(currentProcess);
+        mmu_load_initial_page(currentProcess, allocTime);
     }
     sleep(1);
     int currentTime = getClk();
@@ -159,6 +165,7 @@ void finishCurrentProcess() {
     // Reset currentProcess pointer before picking next
     PCB* finished = currentProcess;
     finished->end_time = currentTime;
+    mmu_free_process(finished);
     if (finished->page_table_frame_i != -1) {
         free_process_frames(physical_memory, finished->id);
         finished->page_table_frame_i = -1;
@@ -255,6 +262,7 @@ int main(int argc, char *argv[]) {
 
     int doneCountShmid = shmget(SHDONE, sizeof(int), 0666 | IPC_CREAT);
     doneCountPtr = (int *)shmat(doneCountShmid, (void *)0, 0);
+    *doneCountPtr = 0;
 
     bool firstProcess = true;
     int msgqid = msgget((currentAlgorithm == 3 && cpu_number == 2) ? QUEUE_KEY2 : QUEUE_KEY, 0666 | IPC_CREAT);
@@ -337,23 +345,8 @@ int main(int argc, char *argv[]) {
             pcb->start_time = -1;
             pcb->status = READY;
             pcb->page_table_frame_i = -1;
-            pcb->req_count = 0;
-
-            if (currentAlgorithm == 1) {
-                int frame_index = getfreeframe(physical_memory);
-                if (frame_index == -1) {
-                    bool requeued = (msgsnd(msgqid, &incoming, sizeof(incoming) - sizeof(long), IPC_NOWAIT) != -1);
-                    if (!requeued) {
-                        fprintf(stderr, "Failed to re-queue process %d when frames full: %s\n", pcb->id, strerror(errno));
-                        free(pcb);
-                        continue;
-                    }
-                    free(pcb);
-                    continue;
-                }
-                allocate_frame(physical_memory, pcb->id, frame_index, -1, 1);
-                pcb->page_table_frame_i = frame_index;
-            }
+            pcb->page_table = NULL;
+            pcb->req_count = load_requests(pcb->id, pcb->requests);
 
             if (firstProcess) {
                 currentProcess = pcb;

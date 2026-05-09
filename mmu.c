@@ -74,6 +74,8 @@ int mmu_allocate_page_table(PCB *pcb) {
         if (frames[frame].owner && frames[frame].page_num >= 0) {
             invalidatePage(frames[frame].owner->page_table, frames[frame].page_num);
         }
+    } else {
+        log_memory("Free Physical page %d allocated\n", frame);
     }
     frames[frame].in_use = 1;
     frames[frame].is_page_table = 1;
@@ -87,7 +89,7 @@ int mmu_allocate_page_table(PCB *pcb) {
     return frame;
 }
 
-int mmu_load_initial_page(PCB *pcb) {
+int mmu_load_initial_page(PCB *pcb, int current_time) {
     if (pcb == NULL || pcb->limit <= 0 || pcb->page_table == NULL) return -1;
     int page_num = 0;
     int frame = find_free_frame();
@@ -97,6 +99,8 @@ int mmu_load_initial_page(PCB *pcb) {
         if (frames[frame].owner && frames[frame].page_num >= 0) {
             invalidatePage(frames[frame].owner->page_table, frames[frame].page_num);
         }
+    } else {
+        log_memory("Free Physical page %d allocated\n", frame);
     }
     frames[frame].in_use = 1;
     frames[frame].is_page_table = 0;
@@ -106,6 +110,8 @@ int mmu_load_initial_page(PCB *pcb) {
     frames[frame].R = 0;
     frames[frame].M = 0;
     setPageEntry(pcb->page_table, page_num, frame);
+    log_memory("At time %d disk address %d for process %d is loaded into memory page %d.\n",
+               current_time, pcb->base + page_num, pcb->id, frame);
     return frame;
 }
 
