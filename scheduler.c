@@ -71,6 +71,10 @@ void finishCurrentProcess() {
     // Reset currentProcess pointer before picking next
     PCB* finished = currentProcess;
     finished->end_time = currentTime;
+    if (finished->page_table_frame_i != -1) {
+        free_process_frames(physical_memory, finished->id);
+        finished->page_table_frame_i = -1;
+    }
 
     if (currentAlgorithm == 1) {
         PCB *temp;
@@ -155,6 +159,7 @@ int main(int argc, char *argv[]) {
     queue = (CircularQueue*)malloc(sizeof(CircularQueue));
     initCircularQueue(queue);
     initializeQueue(pq);
+    initialize_frames(physical_memory);
     signal(SIGTERM, processTerminationHandler);
     signal(SIGUSR1, processFinishedHandler);
 
@@ -196,29 +201,52 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        if (firstProcess)
-        {
-            currentProcess = pcb;
-            startCurrentProcess();
-            firstProcess = false;
-        }
-        if (currentAlgorithm == 1)
-        {
-            int frame_index = getfreeframe(physical_memory);
-            if (frame_index != -1) {
-                allocate_frame(physical_memory, pcb->id, frame_index, -1, 1); // frame for page table
-                pcb->page_table_frame_i = frame_index;
-            } else {
-                // NRU page replacement
+        /* Receive new processes */
+        struct msgbuff incoming;
+        if (msgrcv(msgqid, &incoming, sizeof(incoming) - sizeof(long), 0, IPC_NOWAIT) != -1) {
+            if (incoming.mtype == 2) { /* Load Balancing Logic */
+                PCB *temp;
+                popRear(deque, &temp);
+                if (temp != NULL && (currentProcess == NULL || temp->id != currentProcess->id)) {
+                    struct msgbuff msg = { .mtype = 1, .id = temp->id, .arrival = temp->arrival, .runtime = temp->runtime, .priority = temp->priority, .base = temp->base, .limit = temp->limit };
+                    msgsnd(other_msgqid, &msg, sizeof(msg) - sizeof(long), IPC_NOWAIT);
+                }
+                continue;
             }
-            enqueueCircular(queue, pcb);
-        }
-        if (currentAlgorithm == 2)
-        {
-            insert(pq, pcb);
-            if (pcb->priority < currentProcess->priority)
-            {
-                stopCurrentProcess();
+
+            PCB *pcb = (PCB *)malloc(sizeof(PCB));
+            pcb->id = incoming.id;
+            pcb->arrival = incoming.arrival;
+            pcb->runtime = incoming.runtime;
+            pcb->priority = incoming.priority;
+            pcb->remaining_time = incoming.runtime;
+            pcb->base = incoming.base;
+            pcb->limit = incoming.limit;
+            pcb->begin_time = currentTime;
+            pcb->end_time = -1;
+            pcb->pid = -1;
+            pcb->cpu_time_used = 0;
+            pcb->next_req = 0;
+            pcb->start_time = -1;
+            pcb->status = READY;
+            pcb->page_table_frame_i = -1;
+            pcb->req_count = 0;
+
+            if (currentAlgorithm == 1) {
+                int frame_index = getfreeframe(physical_memory);
+                if (frame_index == -1) {
+                    if (msgsnd(msgqid, &incoming, sizeof(incoming) - sizeof(long), IPC_NOWAIT) == -1) {
+                        perror("Failed to defer process admission due to full frames");
+                    }
+                    free(pcb);
+                    usleep(100000);
+                    continue;
+                }
+                allocate_frame(physical_memory, pcb->id, frame_index, -1, 1);
+                pcb->page_table_frame_i = frame_index;
+            }
+
+            if (firstProcess) {
                 currentProcess = pcb;
                 startCurrentProcess();
                 firstProcess = false;

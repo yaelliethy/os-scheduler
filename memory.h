@@ -1,5 +1,6 @@
+#pragma once
 
-#include "headers.h" 
+#include <stdio.h>
 
 #define TOTAL_FRAMES 32
 
@@ -14,7 +15,7 @@ typedef struct
 } Frame;
 
 
-void initialize_frames(Frame *frames){
+static inline void initialize_frames(Frame *frames){
   for (int i=0; i<TOTAL_FRAMES; i++){
     frames[i].occupied = 0;
     frames[i].process_id = -1;
@@ -25,7 +26,7 @@ void initialize_frames(Frame *frames){
   }
 }
 
-int getfreeframe(Frame *frames){
+static inline int getfreeframe(Frame *frames){
   for (int i=0; i<TOTAL_FRAMES; i++){
     if (frames[i].occupied == 0){
       return i;
@@ -34,7 +35,7 @@ int getfreeframe(Frame *frames){
   return -1; // no free frame
 }
 
-void allocate_frame(Frame *frames, int pid, int frame_i, int page_num, int is_pt){
+static inline void allocate_frame(Frame *frames, int pid, int frame_i, int page_num, int is_pt){
   if (frame_i < 0 || frame_i >= TOTAL_FRAMES){
     printf("Invalid frame index\n");
     return;
@@ -47,7 +48,7 @@ void allocate_frame(Frame *frames, int pid, int frame_i, int page_num, int is_pt
   frames[frame_i].is_pt = is_pt;
 }
 
-void free_process_frames(Frame *frames, int pid){
+static inline void free_process_frames(Frame *frames, int pid){
   for (int i=0; i<TOTAL_FRAMES; i++){
     if (frames[i].occupied == 1 && frames[i].process_id == pid){
       frames[i].occupied = 0;
@@ -59,5 +60,4 @@ void free_process_frames(Frame *frames, int pid){
     }
   }
 }
-
 
