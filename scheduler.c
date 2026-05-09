@@ -20,6 +20,7 @@ int firstStartTime = -1;
 int lastFinishTime = 0;
 int completedForPerf = 0;
 int processTarget = 0;
+#define FRAME_RETRY_DELAY_US 100000
 
 static inline int calculate_waiting_time(PCB *process, int currentTime) {
     int executedTime = process->runtime - process->remaining_time;
@@ -236,10 +237,10 @@ int main(int argc, char *argv[]) {
                 int frame_index = getfreeframe(physical_memory);
                 if (frame_index == -1) {
                     if (msgsnd(msgqid, &incoming, sizeof(incoming) - sizeof(long), IPC_NOWAIT) == -1) {
-                        perror("Failed to defer process admission due to full frames");
+                        perror("Message queue error while re-queuing deferred process");
                     }
                     free(pcb);
-                    usleep(100000);
+                    usleep(FRAME_RETRY_DELAY_US);
                     continue;
                 }
                 allocate_frame(physical_memory, pcb->id, frame_index, -1, 1);
