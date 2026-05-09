@@ -1,4 +1,5 @@
 #include "headers.h"
+#include <string.h>
 
 void clearResources(int);
 static int parse_binary_string(const char *s);
@@ -32,6 +33,8 @@ static int load_requests(int id, MemRequest *out) {
         if (sscanf(line, "%d %63s %c", &cpu_time, addr_str, &rw_char) == 3) {
             out[count].cpu_time = cpu_time;
             out[count].virtual_address = parse_binary_string(addr_str);
+            strncpy(out[count].va_str, addr_str, sizeof(out[count].va_str) - 1);
+            out[count].va_str[sizeof(out[count].va_str) - 1] = '\0';
             out[count].rw = rw_char;
             count++;
         }
@@ -66,10 +69,15 @@ int main(int argc, char *argv[]) {
     }
     fclose(file);
 
-    int algo = 1, quantum;
+    int algo = 1, quantum, k_timeout;
     while (1) {
         printf("Enter quantum: ");
         if (scanf("%d", &quantum) == 1 && quantum > 0) break;
+        while (getchar() != '\n');
+    }
+    while (1) {
+        printf("Enter K: ");
+        if (scanf("%d", &k_timeout) == 1 && k_timeout > 0) break;
         while (getchar() != '\n');
     }
 
@@ -81,12 +89,13 @@ int main(int argc, char *argv[]) {
 
     int sched_pid = fork();
     if (sched_pid == 0) {
-        char algo_str[10], param_str[10], count_str[10], cpu_str[10];
+        char algo_str[10], param_str[10], count_str[10], cpu_str[10], k_str[10];
         sprintf(algo_str, "%d", algo);
         sprintf(param_str, "%d", quantum);
         sprintf(count_str, "%d", count);
         sprintf(cpu_str, "0");
-        execl("./scheduler.out", "scheduler.out", algo_str, param_str, count_str, cpu_str, NULL);
+        sprintf(k_str, "%d", k_timeout);
+        execl("./scheduler.out", "scheduler.out", algo_str, param_str, count_str, cpu_str, k_str, NULL);
         exit(-1);
     }
 

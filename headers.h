@@ -1,4 +1,8 @@
+#ifndef HEADERS_H
+#define HEADERS_H
+
 #include <stdio.h>
+#include "page_table.h"
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/file.h>
@@ -17,6 +21,7 @@
 typedef struct {
     int  cpu_time;         //cpu time when this fires 
     int  virtual_address;  
+    char va_str[16];
     char rw;               // r for read w for write
 } MemRequest;
 
@@ -30,14 +35,14 @@ typedef short bool;
 #define SHQUEUE1 91011
 #define SHQUEUE2 10112
 #define SHDONE 13141
-int * shmaddr;
+static int * shmaddr;
 
-int getClk()
+static inline int getClk()
 {
     return *shmaddr;
 }
 
-void initClk()
+static inline void initClk()
 {
     int shmid = shmget(SHKEY, 4, 0444);
     while ((int)shmid == -1)
@@ -49,7 +54,7 @@ void initClk()
     shmaddr = (int *) shmat(shmid, (void *)0, 0);
 }
 
-void destroyClk(bool terminateAll)
+static inline void destroyClk(bool terminateAll)
 {
     shmdt(shmaddr);
     if (terminateAll)
@@ -74,8 +79,6 @@ struct msgbuff {
     int  limit;            // number of virtual pages for this proc  
 };
 
-struct PageTable;
-
 typedef struct {
     int id;
     int pid;
@@ -91,7 +94,8 @@ typedef struct {
 
     int  base;                      
     int  limit;                    
-    struct PageTable *page_table;   // Member 3 will populate     
+    PageTable *page_table;   // Member 3 will populate     
+    int  page_table_frame;
     int  cpu_time_used;
     MemRequest requests[MAX_REQUESTS];
     int  req_count;
@@ -109,13 +113,13 @@ typedef struct CircularQueue {
     int size;
 } CircularQueue;
 
-void initCircularQueue(CircularQueue* q) {
+static inline void initCircularQueue(CircularQueue* q) {
     q->front = NULL;
     q->rear = NULL;
     q->size = 0;
 }
 
-void enqueueCircular(CircularQueue* q, PCB* process) {
+static inline void enqueueCircular(CircularQueue* q, PCB* process) {
     NodeCircular* newNode = (NodeCircular*)malloc(sizeof(NodeCircular));
     newNode->process = process;
     
@@ -131,7 +135,7 @@ void enqueueCircular(CircularQueue* q, PCB* process) {
     q->size++;
 }
 
-void dequeueCircular(CircularQueue* q, PCB** pcb) {
+static inline void dequeueCircular(CircularQueue* q, PCB** pcb) {
     if (q->front == NULL) return;
     NodeCircular* temp = q->front;
     *pcb = temp->process;
@@ -147,7 +151,7 @@ void dequeueCircular(CircularQueue* q, PCB** pcb) {
     q->size--;
 }
 
-void moveHeadCircular(CircularQueue* q, PCB** newHead) {
+static inline void moveHeadCircular(CircularQueue* q, PCB** newHead) {
     if (q->front == NULL || q->size <= 1) return;
     
     // Rotate: move front to rear
@@ -157,11 +161,34 @@ void moveHeadCircular(CircularQueue* q, PCB** newHead) {
     *newHead = q->front->process;
 }
 
-bool isCircularQueueEmpty(CircularQueue* q) {
+static inline bool isCircularQueueEmpty(CircularQueue* q) {
     return q->size == 0;
 }
-int circularQueueSize(CircularQueue* q) {
+static inline int circularQueueSize(CircularQueue* q) {
     return q->size;
+}
+static inline bool removeCircular(CircularQueue* q, PCB* process) {
+    if (q->front == NULL) return false;
+    NodeCircular* current = q->front;
+    NodeCircular* prev = q->rear;
+    for (int i = 0; i < q->size; i++) {
+        if (current->process == process) {
+            if (current == q->front && current == q->rear) {
+                q->front = NULL;
+                q->rear = NULL;
+            } else {
+                if (current == q->front) q->front = current->next;
+                if (current == q->rear) q->rear = prev;
+                prev->next = current->next;
+            }
+            free(current);
+            q->size--;
+            return true;
+        }
+        prev = current;
+        current = current->next;
+    }
+    return false;
 }
 typedef struct PriNode {
     PCB* process;
@@ -173,12 +200,12 @@ typedef struct {
     int size;
 } PriQueue;
 
-void initializeQueue(PriQueue* pq) {
+static inline void initializeQueue(PriQueue* pq) {
     pq->head = NULL;
     pq->size = 0;
 }
 
-void insert(PriQueue* pq, PCB* process) {
+static inline void insert(PriQueue* pq, PCB* process) {
     PriNode* newNode = (PriNode*)malloc(sizeof(PriNode));
     newNode->process = process;
     newNode->next = NULL;
@@ -216,7 +243,7 @@ void insert(PriQueue* pq, PCB* process) {
     pq->size++;
 }
 
-PCB* removetop(PriQueue* pq) {
+static inline PCB* removetop(PriQueue* pq) {
     if (pq->head == NULL) return NULL;
     PriNode* temp = pq->head;
     PCB* process = temp->process;
@@ -226,12 +253,12 @@ PCB* removetop(PriQueue* pq) {
     return process;
 }
 
-PCB* peek(PriQueue* pq) {
+static inline PCB* peek(PriQueue* pq) {
     if (pq->head == NULL) return NULL;
     return pq->head->process;
 }
 
-int isEmpty(PriQueue* pq) {
+static inline int isEmpty(PriQueue* pq) {
     return pq->head == NULL;
 }
 
@@ -246,13 +273,13 @@ typedef struct {
     int size;
 } DoneQueue;
 
-void initDoneQueue(DoneQueue* dq) {
+static inline void initDoneQueue(DoneQueue* dq) {
     dq->head = NULL;
     dq->tail = NULL;
     dq->size = 0;
 }
 
-void enqueueDone(DoneQueue* dq, PCB* process) {
+static inline void enqueueDone(DoneQueue* dq, PCB* process) {
     DoneNode* newNode = (DoneNode*)malloc(sizeof(DoneNode));
     newNode->process = process;
     newNode->next = NULL;
@@ -265,7 +292,7 @@ void enqueueDone(DoneQueue* dq, PCB* process) {
     }
     dq->size++;
 }
-void dequeueDone(DoneQueue* dq, PCB** pcb) {
+static inline void dequeueDone(DoneQueue* dq, PCB** pcb) {
     if (dq->head == NULL) return;
     DoneNode* temp = dq->head;
     *pcb = temp->process;
@@ -288,13 +315,13 @@ typedef struct Deque {
     int size;
 } Deque;
 
-void initDeque(Deque* q) {
+static inline void initDeque(Deque* q) {
     q->front = NULL;
     q->rear = NULL;
     q->size = 0;
 }
 
-void pushFront(Deque* q, PCB* process) {
+static inline void pushFront(Deque* q, PCB* process) {
     NodeDeque* newNode = (NodeDeque*)malloc(sizeof(NodeDeque));
     newNode->process = process;
 
@@ -313,7 +340,7 @@ void pushFront(Deque* q, PCB* process) {
     q->size++;
 }
 
-void pushRear(Deque* q, PCB* process) {
+static inline void pushRear(Deque* q, PCB* process) {
     NodeDeque* newNode = (NodeDeque*)malloc(sizeof(NodeDeque));
     newNode->process = process;
 
@@ -332,7 +359,7 @@ void pushRear(Deque* q, PCB* process) {
     q->size++;
 }
 
-void popFront(Deque* q, PCB** pcb) {
+static inline void popFront(Deque* q, PCB** pcb) {
     if (q->front == NULL) return;
 
     NodeDeque* temp = q->front;
@@ -350,7 +377,7 @@ void popFront(Deque* q, PCB** pcb) {
     q->size--;
 }
 
-void popRear(Deque* q, PCB** pcb) {
+static inline void popRear(Deque* q, PCB** pcb) {
     if (q->rear == NULL) return;
 
     NodeDeque* temp = q->rear;
@@ -367,18 +394,19 @@ void popRear(Deque* q, PCB** pcb) {
     free(temp);
     q->size--;
 }
-PCB* peekFront(Deque* q) {
+static inline PCB* peekFront(Deque* q) {
     if (q->front == NULL) return NULL;
     return q->front->process;
 }
-PCB* peekRear(Deque* q) {
+static inline PCB* peekRear(Deque* q) {
     if (q->rear == NULL) return NULL;
     return q->rear->process;
 }
-bool isDequeEmpty(Deque* q) {
+static inline bool isDequeEmpty(Deque* q) {
     return q->size == 0;
 }
 
-int dequeSize(Deque* q) {
+static inline int dequeSize(Deque* q) {
     return q->size;
 }
+#endif
