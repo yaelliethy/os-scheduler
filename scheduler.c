@@ -1,5 +1,7 @@
 #include "headers.h"
 #include <signal.h>
+#include <errno.h>
+#include <string.h>
 #include "scheduler_output.h"
 #include "memory.h"
 
@@ -237,7 +239,7 @@ int main(int argc, char *argv[]) {
                 if (frame_index == -1) {
                     bool requeued = (msgsnd(msgqid, &incoming, sizeof(incoming) - sizeof(long), IPC_NOWAIT) != -1);
                     if (!requeued) {
-                        fprintf(stderr, "Failed to re-queue process %d when frames full\n", incoming.id);
+                        fprintf(stderr, "Failed to re-queue process %d when frames full: %s\n", incoming.id, strerror(errno));
                         free(pcb);
                         continue;
                     }
