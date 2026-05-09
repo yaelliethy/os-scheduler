@@ -209,9 +209,11 @@ int main(int argc, char *argv[]) {
             if (incoming.mtype == 2) { /* Load Balancing Logic */
                 PCB *temp;
                 popRear(deque, &temp);
-                if (temp != NULL && (currentProcess == NULL || temp->id != currentProcess->id)) {
-                    struct msgbuff msg = { .mtype = 1, .id = temp->id, .arrival = temp->arrival, .runtime = temp->runtime, .priority = temp->priority, .base = temp->base, .limit = temp->limit };
-                    msgsnd(other_msgqid, &msg, sizeof(msg) - sizeof(long), IPC_NOWAIT);
+                if (temp != NULL) {
+                    if (currentProcess == NULL || temp->id != currentProcess->id) {
+                        struct msgbuff msg = { .mtype = 1, .id = temp->id, .arrival = temp->arrival, .runtime = temp->runtime, .priority = temp->priority, .base = temp->base, .limit = temp->limit };
+                        msgsnd(other_msgqid, &msg, sizeof(msg) - sizeof(long), IPC_NOWAIT);
+                    }
                 }
                 continue;
             }
@@ -239,7 +241,7 @@ int main(int argc, char *argv[]) {
                 if (frame_index == -1) {
                     bool requeued = (msgsnd(msgqid, &incoming, sizeof(incoming) - sizeof(long), IPC_NOWAIT) != -1);
                     if (!requeued) {
-                        fprintf(stderr, "Failed to re-queue process %d when frames full: %s\n", incoming.id, strerror(errno));
+                        fprintf(stderr, "Failed to re-queue process %d when frames full: %s\n", pcb->id, strerror(errno));
                         free(pcb);
                         continue;
                     }
