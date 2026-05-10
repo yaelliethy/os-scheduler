@@ -15,6 +15,7 @@ int* doneCountPtr;
 int processStartTime;
 int cpu_number;
 int r_reset_k;
+int dispatch_delay_until = -1;
 
 Frame physical_memory[TOTAL_FRAMES];
 float *allWTAs;
@@ -97,17 +98,13 @@ static void unblock_ready(int currentTime) {
     }
 }
 
-static void handle_page_fault(const PendingIO *io) {
+static void handle_page_fault(const PendingIO *io, int currentTime) {
     if (currentProcess == NULL) return;
     stopCurrentProcess();
     removeCircular(queue, currentProcess);
     add_blocked(currentProcess, io);
-    if (!isCircularQueueEmpty(queue)) {
-        currentProcess = queue->front->process;
-        startCurrentProcess();
-    } else {
-        currentProcess = NULL;
-    }
+    currentProcess = NULL;
+    dispatch_delay_until = currentTime + 1;
 }
 
 static inline int calculate_waiting_time(PCB *process, int currentTime) {
@@ -276,30 +273,15 @@ int main(int argc, char *argv[]) {
         int currentTime = getClk();
         unblock_ready(currentTime);
         if (currentProcess == NULL && !isCircularQueueEmpty(queue)) {
-            currentProcess = queue->front->process;
-            startCurrentProcess();
+            if (dispatch_delay_until < 0 || currentTime >= dispatch_delay_until) {
+                currentProcess = queue->front->process;
+                startCurrentProcess();
+                dispatch_delay_until = -1;
+            }
         }
         if (currentProcess != NULL && currentProcess->status == RUNNING) {
             int elapsed = currentTime - currentProcess->start_time;
-            int cpu_now = currentProcess->cpu_time_used + elapsed;
-
-            while (currentProcess->next_req < currentProcess->req_count) {
-                MemRequest *req = &currentProcess->requests[currentProcess->next_req];
-                if (cpu_now >= req->cpu_time) {
-                    PendingIO io;
-                    int fault = mmu_access(currentProcess, req, currentTime, &io);
-                    currentProcess->next_req++;
-                    if (fault > 0) {
-                        handle_page_fault(&io);
-                        break;
-                    }
-                } else break;
-            }
-        }
-
-        /* Check for Round Robin quantum expiry */
-        if (currentAlgorithm == 1 && currentProcess != NULL && processStartTime != -1) {
-            if ((currentTime - processStartTime) >= quantum) {
+            if (currentAlgorithm == 1 && processStartTime != -1 && elapsed >= quantum) {
                 processStartTime = currentTime;
                 quantum_counter++;
                 if (r_reset_k > 0 && quantum_counter >= r_reset_k) {
@@ -310,7 +292,22 @@ int main(int argc, char *argv[]) {
                     stopCurrentProcess();
                     moveHeadCircular(queue, &currentProcess);
                     startCurrentProcess();
+                    continue;
                 }
+            }
+
+            int cpu_now = currentProcess->cpu_time_used + elapsed;
+            while (currentProcess->next_req < currentProcess->req_count) {
+                MemRequest *req = &currentProcess->requests[currentProcess->next_req];
+                if (cpu_now >= req->cpu_time) {
+                    PendingIO io;
+                    int fault = mmu_access(currentProcess, req, currentTime, &io);
+                    currentProcess->next_req++;
+                    if (fault > 0) {
+                        handle_page_fault(&io, currentTime);
+                        break;
+                    }
+                } else break;
             }
         }
 
