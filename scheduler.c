@@ -18,7 +18,7 @@ int* doneCountPtr;
 int processStartTime;
 int cpu_number;
 int r_reset_k;
-int next_dispatch_time = NO_DISPATCH_DELAY;
+int dispatch_delayed_until = NO_DISPATCH_DELAY;
 
 Frame physical_memory[TOTAL_FRAMES];
 float *allWTAs;
@@ -107,7 +107,7 @@ static void handle_page_fault(const PendingIO *io, int currentTime) {
     removeCircular(queue, currentProcess);
     add_blocked(currentProcess, io);
     currentProcess = NULL;
-    next_dispatch_time = currentTime + PAGE_FAULT_DISPATCH_DELAY;
+    dispatch_delayed_until = currentTime + PAGE_FAULT_DISPATCH_DELAY;
 }
 
 static inline int calculate_waiting_time(PCB *process, int currentTime) {
@@ -269,23 +269,25 @@ int main(int argc, char *argv[]) {
     int other_msgqid = (currentAlgorithm == 3) ? msgget((cpu_number == 1) ? QUEUE_KEY2 : QUEUE_KEY, 0666 | IPC_CREAT) : -1;
 
     processStartTime = -1;
-    next_dispatch_time = NO_DISPATCH_DELAY;
+    dispatch_delayed_until = NO_DISPATCH_DELAY;
     int quantum_counter = 0;
     int lastTime = -1;
 
     while (*doneCountPtr < count) {
         int currentTime = getClk();
         unblock_ready(currentTime);
-        if (currentProcess == NULL && !isCircularQueueEmpty(queue)) {
-            if (next_dispatch_time == NO_DISPATCH_DELAY || currentTime >= next_dispatch_time) {
-                currentProcess = queue->front->process;
-                startCurrentProcess();
-                next_dispatch_time = NO_DISPATCH_DELAY;
+        if (currentProcess == NULL) {
+            if (dispatch_delayed_until == NO_DISPATCH_DELAY || currentTime >= dispatch_delayed_until) {
+                if (!isCircularQueueEmpty(queue)) {
+                    currentProcess = queue->front->process;
+                    startCurrentProcess();
+                    dispatch_delayed_until = NO_DISPATCH_DELAY;
+                }
             }
         }
         if (currentProcess != NULL && currentProcess->status == RUNNING) {
             int elapsed = currentTime - currentProcess->start_time;
-            int preempted = 0;
+            int was_preempted = 0;
             if (currentAlgorithm == 1 && processStartTime != -1 && elapsed >= quantum) {
                 processStartTime = currentTime;
                 quantum_counter++;
@@ -297,11 +299,11 @@ int main(int argc, char *argv[]) {
                     stopCurrentProcess();
                     moveHeadCircular(queue, &currentProcess);
                     startCurrentProcess();
-                    preempted = 1;
+                    was_preempted = 1;
                 }
             }
 
-            if (!preempted) {
+            if (!was_preempted) {
                 int cpu_now = currentProcess->cpu_time_used + elapsed;
                 while (currentProcess->next_req < currentProcess->req_count) {
                     MemRequest *req = &currentProcess->requests[currentProcess->next_req];
