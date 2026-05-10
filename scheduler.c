@@ -7,6 +7,7 @@
 #include "memory.h"
 
 #define PAGE_FAULT_DISPATCH_DELAY 1
+#define NO_DISPATCH_DELAY -1
 
 CircularQueue *queue;
 Deque *deque;
@@ -17,7 +18,7 @@ int* doneCountPtr;
 int processStartTime;
 int cpu_number;
 int r_reset_k;
-int next_dispatch_time = -1;
+int next_dispatch_time = NO_DISPATCH_DELAY;
 
 Frame physical_memory[TOTAL_FRAMES];
 float *allWTAs;
@@ -268,6 +269,7 @@ int main(int argc, char *argv[]) {
     int other_msgqid = (currentAlgorithm == 3) ? msgget((cpu_number == 1) ? QUEUE_KEY2 : QUEUE_KEY, 0666 | IPC_CREAT) : -1;
 
     processStartTime = -1;
+    next_dispatch_time = NO_DISPATCH_DELAY;
     int quantum_counter = 0;
     int lastTime = -1;
 
@@ -275,15 +277,15 @@ int main(int argc, char *argv[]) {
         int currentTime = getClk();
         unblock_ready(currentTime);
         if (currentProcess == NULL && !isCircularQueueEmpty(queue)) {
-            if (next_dispatch_time < 0 || currentTime >= next_dispatch_time) {
+            if (next_dispatch_time == NO_DISPATCH_DELAY || currentTime >= next_dispatch_time) {
                 currentProcess = queue->front->process;
                 startCurrentProcess();
-                next_dispatch_time = -1;
+                next_dispatch_time = NO_DISPATCH_DELAY;
             }
         }
         if (currentProcess != NULL && currentProcess->status == RUNNING) {
             int elapsed = currentTime - currentProcess->start_time;
-            bool preempted = false;
+            int preempted = 0;
             if (currentAlgorithm == 1 && processStartTime != -1 && elapsed >= quantum) {
                 processStartTime = currentTime;
                 quantum_counter++;
@@ -295,7 +297,7 @@ int main(int argc, char *argv[]) {
                     stopCurrentProcess();
                     moveHeadCircular(queue, &currentProcess);
                     startCurrentProcess();
-                    preempted = true;
+                    preempted = 1;
                 }
             }
 
