@@ -271,31 +271,20 @@ int main(int argc, char *argv[]) {
     processStartTime = -1;
     int quantum_counter = 0;
     int lastTime = -1;
+    int currentTime = getClk();
 
     while (*doneCountPtr < count) {
-        int currentTime = getClk();
+        if (getClk() == currentTime){
+            usleep(100000); // sleep for 100ms to avoid busy waiting
+            continue; // wait for next tick
+        }
+        currentTime = getClk();
         unblock_ready(currentTime);
         if (currentProcess == NULL && !isCircularQueueEmpty(queue)) {
             currentProcess = queue->front->process;
             startCurrentProcess();
         }
-        if (currentProcess != NULL && currentProcess->status == RUNNING) {
-            int elapsed = currentTime - currentProcess->start_time;
-            int cpu_now = currentProcess->cpu_time_used + elapsed;
 
-            while (currentProcess->next_req < currentProcess->req_count) {
-                MemRequest *req = &currentProcess->requests[currentProcess->next_req];
-                if (cpu_now >= req->cpu_time) {
-                    PendingIO io;
-                    int fault = mmu_access(currentProcess, req, currentTime, &io);
-                    currentProcess->next_req++;
-                    if (fault > 0) {
-                        handle_page_fault(&io);
-                        break;
-                    }
-                } else break;
-            }
-        }
 
         /* Check for Round Robin quantum expiry */
         if (currentAlgorithm == 1 && currentProcess != NULL && processStartTime != -1) {
@@ -313,10 +302,31 @@ int main(int argc, char *argv[]) {
                 }
             }
         }
+        currentTime = getClk();
+        if (currentProcess != NULL && currentProcess->status == RUNNING) {
+            int elapsed = currentTime - currentProcess->start_time;
+            int cpu_now = currentProcess->cpu_time_used + elapsed;
 
+            if (currentProcess->next_req < currentProcess->req_count) {
+                MemRequest *req = &currentProcess->requests[currentProcess->next_req];
+                if (cpu_now >= req->cpu_time) {
+                    printf("Process %d making memory request at time %d for address %s\n", currentProcess->id, currentTime, req->va_str);
+                    PendingIO io;
+                    int fault = mmu_access(currentProcess, req, currentTime, &io);
+                    currentProcess->next_req++;
+                    if (fault > 0) {
+                        printf("Process %d caused a page fault at time %d for address %s\n", currentProcess->id, currentTime, req->va_str);
+                        handle_page_fault(&io);
+                    }
+                    continue;
+                }
+            }
+        }
         /* Receive new processes */
         struct msgbuff incoming;
-        if (msgrcv(msgqid, &incoming, sizeof(incoming) - sizeof(long), 0, IPC_NOWAIT) != -1) {
+        bool received = false;
+        while (msgrcv(msgqid, &incoming, sizeof(incoming) - sizeof(long), 0, IPC_NOWAIT) != -1) {
+            received = true;
             if (incoming.mtype == 2) { /* Load Balancing Logic */
                 PCB *temp;
                 popRear(deque, &temp);
@@ -363,11 +373,8 @@ int main(int argc, char *argv[]) {
                 }
             }
             else if (currentAlgorithm == 3) pushRear(deque, pcb);
-        } else {
-            usleep(100000);
         }
     }
     writePerf();
     mmu_shutdown();
-    // Cleanup code...
 }
