@@ -6,6 +6,8 @@
 #include <errno.h>
 #include "memory.h"
 
+#define PAGE_FAULT_DISPATCH_DELAY 1
+
 CircularQueue *queue;
 Deque *deque;
 PriQueue *pq;
@@ -15,7 +17,6 @@ int* doneCountPtr;
 int processStartTime;
 int cpu_number;
 int r_reset_k;
-const int PAGE_FAULT_DISPATCH_DELAY = 1;
 int next_dispatch_time = -1;
 
 Frame physical_memory[TOTAL_FRAMES];
@@ -282,6 +283,7 @@ int main(int argc, char *argv[]) {
         }
         if (currentProcess != NULL && currentProcess->status == RUNNING) {
             int elapsed = currentTime - currentProcess->start_time;
+            bool preempted = false;
             if (currentAlgorithm == 1 && processStartTime != -1 && elapsed >= quantum) {
                 processStartTime = currentTime;
                 quantum_counter++;
@@ -293,22 +295,24 @@ int main(int argc, char *argv[]) {
                     stopCurrentProcess();
                     moveHeadCircular(queue, &currentProcess);
                     startCurrentProcess();
-                    continue;
+                    preempted = true;
                 }
             }
 
-            int cpu_now = currentProcess->cpu_time_used + elapsed;
-            while (currentProcess->next_req < currentProcess->req_count) {
-                MemRequest *req = &currentProcess->requests[currentProcess->next_req];
-                if (cpu_now >= req->cpu_time) {
-                    PendingIO io;
-                    int fault = mmu_access(currentProcess, req, currentTime, &io);
-                    currentProcess->next_req++;
-                    if (fault > 0) {
-                        handle_page_fault(&io, currentTime);
-                        break;
-                    }
-                } else break;
+            if (!preempted) {
+                int cpu_now = currentProcess->cpu_time_used + elapsed;
+                while (currentProcess->next_req < currentProcess->req_count) {
+                    MemRequest *req = &currentProcess->requests[currentProcess->next_req];
+                    if (cpu_now >= req->cpu_time) {
+                        PendingIO io;
+                        int fault = mmu_access(currentProcess, req, currentTime, &io);
+                        currentProcess->next_req++;
+                        if (fault > 0) {
+                            handle_page_fault(&io, currentTime);
+                            break;
+                        }
+                    } else break;
+                }
             }
         }
 
