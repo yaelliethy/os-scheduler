@@ -15,7 +15,8 @@ int* doneCountPtr;
 int processStartTime;
 int cpu_number;
 int r_reset_k;
-int dispatch_delay_until = -1;
+const int PAGE_FAULT_DISPATCH_DELAY = 1;
+int next_dispatch_time = -1;
 
 Frame physical_memory[TOTAL_FRAMES];
 float *allWTAs;
@@ -104,7 +105,7 @@ static void handle_page_fault(const PendingIO *io, int currentTime) {
     removeCircular(queue, currentProcess);
     add_blocked(currentProcess, io);
     currentProcess = NULL;
-    dispatch_delay_until = currentTime + 1;
+    next_dispatch_time = currentTime + PAGE_FAULT_DISPATCH_DELAY;
 }
 
 static inline int calculate_waiting_time(PCB *process, int currentTime) {
@@ -273,10 +274,10 @@ int main(int argc, char *argv[]) {
         int currentTime = getClk();
         unblock_ready(currentTime);
         if (currentProcess == NULL && !isCircularQueueEmpty(queue)) {
-            if (dispatch_delay_until < 0 || currentTime >= dispatch_delay_until) {
+            if (next_dispatch_time < 0 || currentTime >= next_dispatch_time) {
                 currentProcess = queue->front->process;
                 startCurrentProcess();
-                dispatch_delay_until = -1;
+                next_dispatch_time = -1;
             }
         }
         if (currentProcess != NULL && currentProcess->status == RUNNING) {
